@@ -1,0 +1,709 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  super_admin
+  gerente_produccion
+  supervisor_area
+  operador_maquina
+  almacenista
+  vendedor
+  control_calidad
+}
+
+enum MachineType {
+  extrusora
+  selladora
+  impresora
+  refiladora
+  molino
+}
+
+enum ProductionArea {
+  extrusion
+  sellado
+  impresion
+  refilado
+  peletizado
+}
+
+enum OrderStatus {
+  pendiente
+  aprobado
+  en_produccion
+  completado
+  cancelado
+}
+
+enum ProductionOrderStatus {
+  planificada
+  en_proceso
+  pausada
+  completada
+  cancelada
+}
+
+enum PriorityLevel {
+  baja
+  media
+  alta
+  urgente
+}
+
+enum MaterialType {
+  pebd
+  pead
+  pelbd
+  pigmento
+  aditivo
+  reciclado
+}
+
+enum InventoryStatus {
+  disponible
+  reservado
+  en_transito
+  despachado
+  rechazado
+}
+
+enum QualityResult {
+  aprobado
+  rechazado
+  condicional
+}
+
+enum InspectionType {
+  recepcion_mp
+  proceso
+  producto_terminado
+  pre_despacho
+}
+
+enum StopType {
+  programada
+  no_programada
+}
+
+enum StopReason {
+  mantenimiento
+  cambio_producto
+  falta_material
+  falla_mecanica
+  falla_electrica
+  falta_personal
+  almuerzo
+  otros
+}
+
+enum TaskStatus {
+  pendiente
+  en_progreso
+  completada
+  cancelada
+}
+
+enum WarehouseLocation {
+  galpon_1
+  galpon_2
+}
+
+enum TrainingModuleType {
+  manual
+  procedimiento
+  video
+  diagrama
+  buenas_practicas
+}
+
+// Models
+
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  email         String    @unique @db.VarChar(100)
+  password_hash String    @db.VarChar(255)
+  full_name     String    @db.VarChar(100)
+  role          UserRole
+  role_id       Int?
+  is_active     Boolean   @default(true)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @default(now()) @updatedAt
+
+  custom_role            Role?             @relation(fields: [role_id], references: [id])
+  created_orders         Order[]           @relation("OrderCreatedBy")
+  approved_orders        Order[]           @relation("OrderApprovedBy")
+  assigned_pos           ProductionOrder[] @relation("POAssignedOperator")
+  created_pos            ProductionOrder[] @relation("POCreatedBy")
+  operator_records       ProductionRecord[] @relation("RecordOperator")
+  supervisor_records     ProductionRecord[] @relation("RecordSupervisor")
+  approved_inventory     FinishedGoodsInventory[] @relation("InventoryApprovedBy")
+  inspected_quality      QualityControl[]  @relation("QualityInspector")
+  approved_quality       QualityControl[]  @relation("QualityApprovedBy")
+  created_dispatches     Dispatch[]        @relation("DispatchCreatedBy")
+  approved_dispatches    Dispatch[]        @relation("DispatchApprovedBy")
+  pelletizing_operator   PelletizingRecord[] @relation("PelletizingOperator")
+  reported_stops         MachineStop[]     @relation("StopReportedBy")
+  resolved_stops         MachineStop[]     @relation("StopResolvedBy")
+  assigned_tasks         Task[]            @relation("TaskAssignedTo")
+  created_tasks          Task[]            @relation("TaskCreatedBy")
+  created_modules        TrainingModule[]  @relation("ModuleCreatedBy")
+  audit_logs             AuditLog[]
+  updated_settings       SystemSetting[]   @relation("SettingUpdatedBy")
+
+  @@map("users")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  permissions Json
+  description String?  @db.Text
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+  users       User[]
+
+  @@map("roles")
+}
+
+model Customer {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique @db.VarChar(20)
+  business_name String    @db.VarChar(200)
+  tax_id        String?   @unique @db.VarChar(50)
+  contact_name  String?   @db.VarChar(100)
+  phone         String?   @db.VarChar(20)
+  email         String?   @db.VarChar(100)
+  address       String?   @db.Text
+  city          String?   @db.VarChar(100)
+  state         String?   @db.VarChar(100)
+  country       String?   @default("Venezuela") @db.VarChar(100)
+  credit_limit  Decimal?  @db.Decimal(12, 2)
+  payment_terms Int?      @default(30)
+  is_active     Boolean   @default(true)
+  notes         String?   @db.Text
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @default(now()) @updatedAt
+  orders        Order[]
+  dispatches    Dispatch[]
+
+  @@map("customers")
+}
+
+model Product {
+  id                        Int          @id @default(autoincrement())
+  code                      String       @unique @db.VarChar(50)
+  name                      String       @db.VarChar(200)
+  description               String?      @db.Text
+  width_cm                  Decimal      @db.Decimal(8, 2)
+  length_cm                 Decimal?     @db.Decimal(8, 2)
+  caliber_microns           Decimal      @db.Decimal(6, 2)
+  has_gusset                Boolean      @default(false)
+  gusset_width_cm           Decimal?     @db.Decimal(8, 2)
+  has_perforation           Boolean      @default(false)
+  perforation_type          String?      @db.VarChar(50)
+  has_valve                 Boolean      @default(false)
+  valve_width_cm            Decimal?     @db.Decimal(8, 2)
+  has_print                 Boolean      @default(false)
+  print_colors              Int?
+  max_reel_weight_kg        Decimal?     @db.Decimal(8, 2)
+  is_heat_shrinkable        Boolean      @default(false)
+  requires_trimming         Boolean      @default(false)
+  requires_corona_treatment Boolean      @default(false)
+  bag_weight_grams          Decimal?     @db.Decimal(8, 3)
+  bags_per_reel             Int?
+  reels_per_bundle          Int?
+  material_type             MaterialType
+  color                     String?      @db.VarChar(50)
+  recycled_percentage       Decimal?     @default(0) @db.Decimal(5, 2)
+  unit_price                Decimal?     @db.Decimal(12, 2)
+  cost_price                Decimal?     @db.Decimal(12, 2)
+  is_active                 Boolean      @default(true)
+  created_at                DateTime     @default(now())
+  updated_at                DateTime     @default(now()) @updatedAt
+
+  machine_params         ProductMachineParam[]
+  order_items            OrderItem[]
+  production_orders      ProductionOrder[]
+  finished_goods         FinishedGoodsInventory[]
+  quality_controls       QualityControl[]
+
+  @@map("products")
+}
+
+model Machine {
+  id                    Int             @id @default(autoincrement())
+  code                  String          @unique @db.VarChar(20)
+  name                  String          @db.VarChar(100)
+  type                  MachineType
+  area                  ProductionArea
+  brand                 String?         @db.VarChar(100)
+  model                 String?         @db.VarChar(100)
+  serial_number         String?         @db.VarChar(100)
+  year_manufactured     Int?
+  standard_speed        Decimal         @db.Decimal(8, 2)
+  max_speed             Decimal?        @db.Decimal(8, 2)
+  min_speed             Decimal?        @db.Decimal(8, 2)
+  warehouse_location    WarehouseLocation
+  technical_specs       Json?           @default("{}")
+  is_active             Boolean         @default(true)
+  last_maintenance_date DateTime?       @db.Date
+  next_maintenance_date DateTime?       @db.Date
+  notes                 String?         @db.Text
+  created_at            DateTime        @default(now())
+  updated_at            DateTime        @default(now()) @updatedAt
+
+  product_params     ProductMachineParam[]
+  production_orders  ProductionOrder[]
+  production_records ProductionRecord[]
+  machine_stops      MachineStop[]
+  assigned_tasks     Task[]
+  plant_map_position PlantMapPosition?
+
+  @@map("machines")
+}
+
+model ProductMachineParam {
+  id          Int            @id @default(autoincrement())
+  product_id  Int
+  machine_id  Int
+  area        ProductionArea
+  parameters  Json
+  is_active   Boolean        @default(true)
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @default(now()) @updatedAt
+
+  product Product @relation(fields: [product_id], references: [id])
+  machine Machine @relation(fields: [machine_id], references: [id])
+
+  @@unique([product_id, machine_id, area])
+  @@map("product_machine_params")
+}
+
+model Order {
+  id             Int          @id @default(autoincrement())
+  order_number   String       @unique @db.VarChar(50)
+  customer_id    Int
+  order_date     DateTime     @db.Date
+  delivery_date  DateTime     @db.Date
+  status         OrderStatus
+  priority       PriorityLevel @default(media)
+  subtotal       Decimal?     @default(0) @db.Decimal(12, 2)
+  tax_percentage Decimal?     @default(0) @db.Decimal(5, 2)
+  tax_amount     Decimal?     @default(0) @db.Decimal(12, 2)
+  total_amount   Decimal?     @default(0) @db.Decimal(12, 2)
+  notes          String?      @db.Text
+  internal_notes String?      @db.Text
+  created_by     Int?
+  approved_by    Int?
+  approved_at    DateTime?
+  created_at     DateTime     @default(now())
+  updated_at     DateTime     @default(now()) @updatedAt
+
+  customer       Customer        @relation(fields: [customer_id], references: [id])
+  creator        User?           @relation("OrderCreatedBy", fields: [created_by], references: [id])
+  approver       User?           @relation("OrderApprovedBy", fields: [approved_by], references: [id])
+  items          OrderItem[]
+  production_orders ProductionOrder[]
+  finished_goods FinishedGoodsInventory[]
+  dispatches     Dispatch[]
+  tasks          Task[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id             Int      @id @default(autoincrement())
+  order_id       Int
+  product_id     Int
+  quantity_units Int?
+  quantity_kg    Decimal? @db.Decimal(10, 2)
+  unit_price     Decimal  @db.Decimal(12, 2)
+  subtotal       Decimal  @db.Decimal(12, 2)
+  specifications String?  @db.Text
+  created_at     DateTime @default(now())
+
+  order   Order   @relation(fields: [order_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@map("order_items")
+}
+
+model ProductionOrder {
+  id                     Int                   @id @default(autoincrement())
+  po_number              String                @unique @db.VarChar(50)
+  order_id               Int?
+  product_id             Int
+  planned_quantity_kg    Decimal               @db.Decimal(10, 2)
+  planned_quantity_units Int?
+  produced_quantity_kg   Decimal?              @default(0) @db.Decimal(10, 2)
+  produced_quantity_units Int?                 @default(0)
+  start_date             DateTime              @db.Date
+  end_date               DateTime?             @db.Date
+  actual_start_date      DateTime?             @db.Date
+  actual_end_date        DateTime?             @db.Date
+  status                 ProductionOrderStatus
+  priority               PriorityLevel         @default(media)
+  assigned_machine_id    Int?
+  assigned_operator_id   Int?
+  notes                  String?               @db.Text
+  created_by             Int?
+  created_at             DateTime              @default(now())
+  updated_at             DateTime              @default(now()) @updatedAt
+
+  order            Order?             @relation(fields: [order_id], references: [id])
+  product          Product            @relation(fields: [product_id], references: [id])
+  machine          Machine?           @relation(fields: [assigned_machine_id], references: [id])
+  operator         User?              @relation("POAssignedOperator", fields: [assigned_operator_id], references: [id])
+  creator          User?              @relation("POCreatedBy", fields: [created_by], references: [id])
+  records          ProductionRecord[]
+
+  @@map("production_orders")
+}
+
+model ProductionRecord {
+  id                  Int            @id @default(autoincrement())
+  production_order_id Int
+  machine_id          Int
+  area                ProductionArea
+  production_date     DateTime       @db.Date
+  shift               String?        @db.VarChar(20)
+  shift_start         DateTime?      @db.Time
+  shift_end           DateTime?      @db.Time
+  produced_quantity_kg Decimal       @db.Decimal(10, 2)
+  produced_quantity_units Int?
+  waste_quantity_kg   Decimal?       @default(0) @db.Decimal(10, 2)
+  waste_percentage    Decimal?       @default(0) @db.Decimal(5, 2)
+  planned_time_hours  Decimal?       @db.Decimal(6, 2)
+  operation_time_hours Decimal       @db.Decimal(6, 2)
+  downtime_hours      Decimal?       @default(0) @db.Decimal(6, 2)
+  machine_efficiency  Decimal?       @db.Decimal(5, 2)
+  performance_rate    Decimal?       @db.Decimal(5, 2)
+  quality_rate        Decimal?       @db.Decimal(5, 2)
+  oee                 Decimal?       @db.Decimal(5, 2)
+  machine_parameters  Json?          @default("{}")
+  operator_id         Int?
+  supervisor_id       Int?
+  notes               String?        @db.Text
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @default(now()) @updatedAt
+
+  production_order ProductionOrder @relation(fields: [production_order_id], references: [id])
+  machine          Machine         @relation(fields: [machine_id], references: [id])
+  operator         User?           @relation("RecordOperator", fields: [operator_id], references: [id])
+  supervisor       User?           @relation("RecordSupervisor", fields: [supervisor_id], references: [id])
+  
+  material_consumptions MaterialConsumption[]
+  finished_goods        FinishedGoodsInventory[]
+  quality_controls      QualityControl[]
+  machine_stops         MachineStop[]
+
+  @@map("production_records")
+}
+
+model RawMaterial {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique @db.VarChar(50)
+  name          String       @db.VarChar(200)
+  type          MaterialType
+  supplier      String?      @db.VarChar(200)
+  supplier_code String?      @db.VarChar(100)
+  unit_cost     Decimal?     @db.Decimal(12, 2)
+  unit_measure  String?      @default("kg") @db.VarChar(20)
+  min_stock     Decimal?     @default(0) @db.Decimal(10, 2)
+  max_stock     Decimal?     @db.Decimal(10, 2)
+  reorder_point Decimal?     @db.Decimal(10, 2)
+  specifications String?     @db.Text
+  is_active     Boolean      @default(true)
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @default(now()) @updatedAt
+
+  inventory     RawMaterialInventory[]
+  consumptions  MaterialConsumption[]
+
+  @@map("raw_materials")
+}
+
+model RawMaterialInventory {
+  id                 Int             @id @default(autoincrement())
+  material_id        Int
+  quantity           Decimal         @db.Decimal(10, 2)
+  batch_number       String?         @db.VarChar(100)
+  entry_date         DateTime        @db.Date
+  expiry_date        DateTime?       @db.Date
+  warehouse_location String?         @db.VarChar(100)
+  status             InventoryStatus @default(disponible)
+  purchase_order     String?         @db.VarChar(100)
+  invoice_number     String?         @db.VarChar(100)
+  notes              String?         @db.Text
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @default(now()) @updatedAt
+
+  material     RawMaterial          @relation(fields: [material_id], references: [id])
+  consumptions MaterialConsumption[]
+
+  @@map("raw_material_inventory")
+}
+
+model MaterialConsumption {
+  id                   Int      @id @default(autoincrement())
+  production_record_id Int
+  material_id          Int
+  inventory_id         Int?
+  quantity_consumed    Decimal  @db.Decimal(10, 2)
+  theoretical_consumption Decimal? @db.Decimal(10, 2)
+  variance_percentage  Decimal? @db.Decimal(5, 2)
+  batch_number         String?  @db.VarChar(100)
+  created_at           DateTime @default(now())
+
+  production_record ProductionRecord    @relation(fields: [production_record_id], references: [id])
+  material          RawMaterial         @relation(fields: [material_id], references: [id])
+  inventory         RawMaterialInventory? @relation(fields: [inventory_id], references: [id])
+
+  @@map("material_consumption")
+}
+
+model FinishedGoodsInventory {
+  id                    Int             @id @default(autoincrement())
+  product_id            Int
+  production_record_id  Int?
+  batch_number          String          @unique @db.VarChar(100)
+  lot_number            String?         @db.VarChar(100)
+  quantity_kg           Decimal         @db.Decimal(10, 2)
+  quantity_units        Int?
+  reels_count           Int?
+  bags_per_reel         Int?
+  bundles_count         Int?
+  warehouse_location    String?         @db.VarChar(100)
+  status                InventoryStatus @default(disponible)
+  production_date       DateTime        @db.Date
+  entry_date            DateTime?       @default(now()) @db.Date
+  reserved_for_order_id Int?
+  quality_approved      Boolean?        @default(false)
+  quality_approved_by   Int?
+  quality_approved_at   DateTime?
+  notes                 String?         @db.Text
+  created_at            DateTime        @default(now())
+  updated_at            DateTime        @default(now()) @updatedAt
+
+  product           Product           @relation(fields: [product_id], references: [id])
+  production_record ProductionRecord? @relation(fields: [production_record_id], references: [id])
+  order             Order?            @relation(fields: [reserved_for_order_id], references: [id])
+  approver          User?             @relation("InventoryApprovedBy", fields: [quality_approved_by], references: [id])
+  
+  quality_controls  QualityControl[]
+  dispatch_items    DispatchItem[]
+
+  @@map("finished_goods_inventory")
+}
+
+model QualityControl {
+  id                   Int            @id @default(autoincrement())
+  production_record_id Int?
+  product_id           Int
+  finished_goods_id    Int?
+  inspection_date      DateTime       @db.Date
+  inspection_time      DateTime?      @default(now()) @db.Time
+  inspection_type      InspectionType
+  test_results         Json
+  result_status        QualityResult
+  observations         String?        @db.Text
+  corrective_actions   String?        @db.Text
+  inspector_id         Int
+  approved_by          Int?
+  created_at           DateTime       @default(now())
+  updated_at           DateTime       @default(now()) @updatedAt
+
+  production_record    ProductionRecord?       @relation(fields: [production_record_id], references: [id])
+  product              Product                 @relation(fields: [product_id], references: [id])
+  finished_goods       FinishedGoodsInventory? @relation(fields: [finished_goods_id], references: [id])
+  inspector            User                    @relation("QualityInspector", fields: [inspector_id], references: [id])
+  approver             User?                   @relation("QualityApprovedBy", fields: [approved_by], references: [id])
+
+  @@map("quality_controls")
+}
+
+model Dispatch {
+  id              Int         @id @default(autoincrement())
+  dispatch_number String      @unique @db.VarChar(50)
+  order_id        Int
+  customer_id     Int
+  dispatch_date   DateTime    @db.Date
+  dispatch_time   DateTime?   @default(now()) @db.Time
+  vehicle_plate   String?     @db.VarChar(20)
+  driver_name     String?     @db.VarChar(100)
+  driver_id       String?     @db.VarChar(50)
+  driver_phone    String?     @db.VarChar(20)
+  status          OrderStatus @default(pendiente)
+  total_weight_kg Decimal?    @db.Decimal(10, 2)
+  total_packages  Int?
+  notes           String?     @db.Text
+  created_by      Int?
+  approved_by     Int?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @default(now()) @updatedAt
+
+  order    Order @relation(fields: [order_id], references: [id])
+  customer Customer @relation(fields: [customer_id], references: [id])
+  creator  User?    @relation("DispatchCreatedBy", fields: [created_by], references: [id])
+  approver User?    @relation("DispatchApprovedBy", fields: [approved_by], references: [id])
+  items    DispatchItem[]
+
+  @@map("dispatches")
+}
+
+model DispatchItem {
+  id                Int      @id @default(autoincrement())
+  dispatch_id       Int
+  finished_goods_id Int
+  quantity_kg       Decimal  @db.Decimal(10, 2)
+  quantity_units    Int?
+  packages_count    Int?
+  batch_number      String?  @db.VarChar(100)
+  created_at        DateTime @default(now())
+
+  dispatch       Dispatch               @relation(fields: [dispatch_id], references: [id])
+  finished_goods FinishedGoodsInventory @relation(fields: [finished_goods_id], references: [id])
+
+  @@map("dispatch_items")
+}
+
+model PelletizingRecord {
+  id               Int             @id @default(autoincrement())
+  pelletizing_date DateTime        @db.Date
+  shift            String?         @db.VarChar(20)
+  input_waste_kg   Decimal         @db.Decimal(10, 2)
+  output_pellet_kg Decimal         @db.Decimal(10, 2)
+  yield_percentage Decimal?        @db.Decimal(5, 2)
+  waste_source     ProductionArea?
+  material_type    MaterialType?
+  batch_number     String?         @db.VarChar(100)
+  operator_id      Int?
+  notes            String?         @db.Text
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @default(now()) @updatedAt
+
+  operator User? @relation("PelletizingOperator", fields: [operator_id], references: [id])
+
+  @@map("pelletizing_records")
+}
+
+model MachineStop {
+  id                   Int       @id @default(autoincrement())
+  machine_id           Int
+  production_record_id Int?
+  stop_start           DateTime
+  stop_end             DateTime?
+  duration_minutes     Int?
+  stop_type            StopType
+  stop_reason          StopReason
+  description          String?   @db.Text
+  corrective_action    String?   @db.Text
+  reported_by          Int?
+  resolved_by          Int?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @default(now()) @updatedAt
+
+  machine           Machine           @relation(fields: [machine_id], references: [id])
+  production_record ProductionRecord? @relation(fields: [production_record_id], references: [id])
+  reporter          User?             @relation("StopReportedBy", fields: [reported_by], references: [id])
+  resolver          User?             @relation("StopResolvedBy", fields: [resolved_by], references: [id])
+
+  @@map("machine_stops")
+}
+
+model Task {
+  id                 Int           @id @default(autoincrement())
+  title              String        @db.VarChar(200)
+  description        String?       @db.Text
+  priority           PriorityLevel @default(media)
+  status             TaskStatus    @default(pendiente)
+  due_date           DateTime?     @db.Date
+  assigned_to        Int?
+  created_by         Int
+  related_machine_id Int?
+  related_order_id   Int?
+  completed_at       DateTime?
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @default(now()) @updatedAt
+
+  assignee User?    @relation("TaskAssignedTo", fields: [assigned_to], references: [id])
+  creator  User     @relation("TaskCreatedBy", fields: [created_by], references: [id])
+  machine  Machine? @relation(fields: [related_machine_id], references: [id])
+  order    Order?   @relation(fields: [related_order_id], references: [id])
+
+  @@map("tasks")
+}
+
+model PlantMapPosition {
+  id         Int               @id @default(autoincrement())
+  machine_id Int               @unique
+  warehouse  WarehouseLocation
+  position_x Decimal           @db.Decimal(8, 2)
+  position_y Decimal           @db.Decimal(8, 2)
+  width      Decimal           @default(100) @db.Decimal(8, 2)
+  height     Decimal           @default(80) @db.Decimal(8, 2)
+  rotation   Decimal           @default(0) @db.Decimal(5, 2)
+  updated_at DateTime          @default(now()) @updatedAt
+
+  machine Machine @relation(fields: [machine_id], references: [id])
+
+  @@map("plant_map_positions")
+}
+
+model TrainingModule {
+  id            Int                @id @default(autoincrement())
+  title         String             @db.VarChar(200)
+  content       String?            @db.Text
+  module_type   TrainingModuleType
+  file_url      String?            @db.VarChar(500)
+  thumbnail_url String?            @db.VarChar(500)
+  order_index   Int?               @default(0)
+  is_active     Boolean            @default(true)
+  created_by    Int?
+  created_at    DateTime           @default(now())
+  updated_at    DateTime           @default(now()) @updatedAt
+
+  creator User? @relation("ModuleCreatedBy", fields: [created_by], references: [id])
+
+  @@map("training_modules")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  user_id    Int?
+  action     String   @db.VarChar(50)
+  table_name String?  @db.VarChar(100)
+  record_id  Int?
+  old_values Json?
+  new_values Json?
+  ip_address String?
+  user_agent String?  @db.Text
+  created_at DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id])
+
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id            Int      @id @default(autoincrement())
+  setting_key   String   @unique @db.VarChar(100)
+  setting_value String?  @db.Text
+  setting_type  String?  @db.VarChar(50)
+  description   String?  @db.Text
+  updated_by    Int?
+  updated_at    DateTime @default(now()) @updatedAt
+
+  updater User? @relation("SettingUpdatedBy", fields: [updated_by], references: [id])
+
+  @@map("system_settings")
+}
